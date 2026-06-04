@@ -47,6 +47,9 @@ type SceneConfig struct {
 	Origin *vec3 `json:"origin,omitempty"`
 	// SpacingMM is the grid pitch between adjacent LEDs. Defaults to 12.
 	SpacingMM float64 `json:"spacing_mm,omitempty"`
+	// AnchorPixel (0-3) is placed at the frame origin — set it to the painting
+	// pixel so that LED sits exactly on the motion frame / drawing point.
+	AnchorPixel int `json:"anchor_pixel,omitempty"`
 }
 
 func (c *SceneConfig) Validate(string) ([]string, []string, error) { return nil, nil, nil }
@@ -71,6 +74,7 @@ type ledScene struct {
 	parentFrame string
 	origin      r3.Vector
 	spacing     float64
+	anchor      int
 	pixels      [NumPixels]RGB
 	brightness  float64
 }
@@ -110,6 +114,10 @@ func (s *ledScene) Reconfigure(_ context.Context, _ resource.Dependencies, conf 
 	s.spacing = 40
 	if cfg.SpacingMM > 0 {
 		s.spacing = cfg.SpacingMM
+	}
+	s.anchor = 0
+	if cfg.AnchorPixel >= 0 && cfg.AnchorPixel < NumPixels {
+		s.anchor = cfg.AnchorPixel
 	}
 	parent := s.parentFrame
 	s.mu.Unlock()
@@ -156,11 +164,12 @@ func (s *ledScene) rebuildLocked() {
 		if p.R == 0 && p.G == 0 && p.B == 0 {
 			col = visuals.Color{R: 38, G: 38, B: 48} // dark dot when off
 		}
-		gridCol := float64(i % 2)
-		gridRow := float64(i / 2)
+		// Offset so the anchor pixel sits at the frame origin (the motion point).
+		gridCol := float64(i%2 - s.anchor%2)
+		gridRow := float64(i/2 - s.anchor/2)
 		pos := s.origin.Add(r3.Vector{
-			Y: (gridCol - 0.5) * s.spacing,
-			Z: (0.5 - gridRow) * s.spacing, // row 0 on top
+			Y: gridCol * s.spacing,
+			Z: -gridRow * s.spacing, // row increases downward
 		})
 		vs = append(vs, &visuals.Sphere{
 			Label:       fmt.Sprintf("led_%d", i),
