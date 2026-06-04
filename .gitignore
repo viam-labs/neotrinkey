@@ -1,0 +1,5 @@
+bin/
+dist/
+module*.tar.gz
+*.log
+.DS_Store

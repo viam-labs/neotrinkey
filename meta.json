@@ -1,0 +1,30 @@
+{
+  "$schema": "https://dl.viam.dev/module.schema.json",
+  "module_id": "viam:neotrinkey",
+  "visibility": "private",
+  "description": "Drive the Adafruit NeoTrinkey (SAMD21 USB key with 4 NeoPixels): a real USB-serial driver, a simulated driver, and a 3D visualizer that shows the 4 LEDs as size- and color-coded spheres.",
+  "models": [
+    {
+      "api": "rdk:component:generic",
+      "model": "viam:neotrinkey:trinkey",
+      "short_description": "Real NeoTrinkey driver over USB serial (CircuitPython firmware)"
+    },
+    {
+      "api": "rdk:component:generic",
+      "model": "viam:neotrinkey:trinkey-sim",
+      "short_description": "Simulated NeoTrinkey driver (no hardware)"
+    },
+    {
+      "api": "rdk:service:world_state_store",
+      "model": "viam:neotrinkey:trinkey-scene",
+      "short_description": "3D visualizer for the 4 NeoPixels (size = intensity, color = RGB)"
+    }
+  ],
+  "entrypoint": "bin/neotrinkey",
+  "build": {
+    "build": "make module.tar.gz",
+    "path": "module.tar.gz",
+    "arch": ["linux/amd64", "linux/arm64", "darwin/amd64", "darwin/arm64", "windows/amd64"]
+  },
+  "markdown_link": "README.md"
+}
