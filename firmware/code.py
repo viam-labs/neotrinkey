@@ -2,23 +2,32 @@
 #
 # Reads newline-terminated lines of 12 comma-separated 0-255 integers
 # ("r,g,b,r,g,b,r,g,b,r,g,b\n") from the USB CDC data port and drives the 4
-# on-board NeoPixels. Pairs with go.bug.st/serial on the host side.
-#
-# Requires CircuitPython + the `neopixel` library, and boot.py enabling
-# usb_cdc.data. Tested on the Adafruit NeoTrinkey (SAMD21).
+# on-board NeoPixels. Uses only built-in CircuitPython modules (no library
+# bundle needed). Requires boot.py to enable usb_cdc.data.
 import board
-import neopixel
+import digitalio
+import neopixel_write
 import usb_cdc
 
 NUM = 4
-pixels = neopixel.NeoPixel(board.NEOPIXEL, NUM, brightness=1.0, auto_write=False)
+pin = digitalio.DigitalInOut(board.NEOPIXEL)
+pin.direction = digitalio.Direction.OUTPUT
 serial = usb_cdc.data
 
+
+def show(rgb):
+    # rgb: flat list [r0,g0,b0, r1,g1,b1, ...]; NeoPixels take GRB order.
+    buf = bytearray(NUM * 3)
+    for i in range(NUM):
+        buf[i * 3] = rgb[i * 3 + 1]      # G
+        buf[i * 3 + 1] = rgb[i * 3]      # R
+        buf[i * 3 + 2] = rgb[i * 3 + 2]  # B
+    neopixel_write.neopixel_write(pin, buf)
+
+
 # Boot indicator: dim white, then off.
-pixels.fill((8, 8, 8))
-pixels.show()
-pixels.fill((0, 0, 0))
-pixels.show()
+show([8, 8, 8] * NUM)
+show([0, 0, 0] * NUM)
 
 buf = b""
 while True:
@@ -36,6 +45,4 @@ while True:
         except ValueError:
             continue
         if len(vals) >= NUM * 3:
-            for i in range(NUM):
-                pixels[i] = (vals[i * 3], vals[i * 3 + 1], vals[i * 3 + 2])
-            pixels.show()
+            show(vals[: NUM * 3])
