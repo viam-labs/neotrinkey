@@ -19,8 +19,8 @@ import (
 var SceneModel = resource.NewModel("viam", "neotrinkey", "trinkey-scene")
 
 const (
-	minRadiusMM = 6.0
-	maxRadiusMM = 28.0
+	minRadiusMM = 4.0
+	maxRadiusMM = 16.0
 )
 
 func init() {
@@ -37,11 +37,15 @@ type vec3 struct {
 	Z float64 `json:"z"`
 }
 
-// SceneConfig positions the LED row in the world.
+// SceneConfig positions the 4 LEDs (a 2x2 grid) within a frame.
 type SceneConfig struct {
-	// Origin is the world position (mm) of the first LED. Defaults to {0,300,300}.
+	// ParentFrame is the frame the LEDs are drawn in. Set it to the LED
+	// component's frame (mounted on the arm) so the LEDs ride the end effector.
+	// Defaults to "world".
+	ParentFrame string `json:"parent_frame,omitempty"`
+	// Origin offsets the grid center within the parent frame (mm). Default {0,0,0}.
 	Origin *vec3 `json:"origin,omitempty"`
-	// SpacingMM is the spacing between LEDs along +Y. Defaults to 45.
+	// SpacingMM is the grid pitch between adjacent LEDs. Defaults to 12.
 	SpacingMM float64 `json:"spacing_mm,omitempty"`
 }
 
@@ -63,11 +67,12 @@ type ledScene struct {
 	visuals.SceneServiceBase
 	logger logging.Logger
 
-	mu         sync.Mutex
-	origin     r3.Vector
-	spacing    float64
-	pixels     [NumPixels]RGB
-	brightness float64
+	mu          sync.Mutex
+	parentFrame string
+	origin      r3.Vector
+	spacing     float64
+	pixels      [NumPixels]RGB
+	brightness  float64
 }
 
 func newScene(
@@ -78,6 +83,9 @@ func newScene(
 	s.SceneServiceBase.Hooks = s
 	s.SceneServiceBase.Logger = logger
 	s.SceneServiceBase.DefaultParentFrame = "world"
+	// New UUID per update so re-added geometry isn't dropped by the viewer's
+	// REMOVED-UUID cache (LEDs update live without a manual refresh).
+	s.SceneServiceBase.DefaultUUIDStrategy = "versioned"
 	if err := s.Reconfigure(ctx, deps, conf); err != nil {
 		return nil, err
 	}
@@ -91,17 +99,22 @@ func (s *ledScene) Reconfigure(_ context.Context, _ resource.Dependencies, conf 
 		return err
 	}
 	s.mu.Lock()
-	s.origin = r3.Vector{X: 0, Y: 300, Z: 300}
+	s.parentFrame = "world"
+	if cfg.ParentFrame != "" {
+		s.parentFrame = cfg.ParentFrame
+	}
+	s.origin = r3.Vector{}
 	if cfg.Origin != nil {
 		s.origin = r3.Vector{X: cfg.Origin.X, Y: cfg.Origin.Y, Z: cfg.Origin.Z}
 	}
-	s.spacing = 45
+	s.spacing = 40
 	if cfg.SpacingMM > 0 {
 		s.spacing = cfg.SpacingMM
 	}
+	parent := s.parentFrame
 	s.mu.Unlock()
 
-	if err := s.SceneServiceBase.ReconfigureWith(nil, 0, "", "world"); err != nil {
+	if err := s.SceneServiceBase.ReconfigureWith(nil, 0, "", parent); err != nil {
 		return err
 	}
 	visuals.Register(conf.ResourceName().Name, s)
@@ -132,6 +145,9 @@ func (s *ledScene) ShowPixels(pixels [NumPixels]RGB, brightness float64) {
 }
 
 func (s *ledScene) rebuildLocked() {
+	// The NeoTrinkey's 4 NeoPixels are a 2x2 grid. Lay them out in the parent
+	// frame's local Y-Z plane (perpendicular to the tool/light axis), centered on
+	// the origin: index i -> column i%2, row i/2.
 	vs := make([]interface{}, 0, NumPixels)
 	for i, p := range s.pixels {
 		intensity := float64(maxU8(p.R, p.G, p.B)) / 255.0 * s.brightness
@@ -140,15 +156,21 @@ func (s *ledScene) rebuildLocked() {
 		if p.R == 0 && p.G == 0 && p.B == 0 {
 			col = visuals.Color{R: 38, G: 38, B: 48} // dark dot when off
 		}
-		pos := s.origin.Add(r3.Vector{Y: float64(i) * s.spacing})
+		gridCol := float64(i % 2)
+		gridRow := float64(i / 2)
+		pos := s.origin.Add(r3.Vector{
+			Y: (gridCol - 0.5) * s.spacing,
+			Z: (0.5 - gridRow) * s.spacing, // row 0 on top
+		})
 		vs = append(vs, &visuals.Sphere{
-			Label:    fmt.Sprintf("led_%d", i),
-			Pose:     visuals.PoseAt(pos.X, pos.Y, pos.Z, 0, 0, 1, 0),
-			RadiusMM: radius,
-			Color:    &col,
+			Label:       fmt.Sprintf("led_%d", i),
+			Pose:        visuals.PoseAt(pos.X, pos.Y, pos.Z, 0, 0, 1, 0),
+			RadiusMM:    radius,
+			ParentFrame: s.parentFrame,
+			Color:       &col,
 		})
 	}
-	if err := s.SceneServiceBase.SetScene(visuals.SetSceneOpts{ParentFrame: "world"}, vs...); err != nil {
+	if err := s.SceneServiceBase.SetScene(visuals.SetSceneOpts{ParentFrame: s.parentFrame}, vs...); err != nil {
 		s.logger.Warnw("trinkey-scene SetScene failed", "err", err)
 	}
 }
