@@ -84,12 +84,12 @@ func newScene(
 ) (worldstatestore.Service, error) {
 	s := &ledScene{logger: logger, brightness: 1.0}
 	s.Named = conf.ResourceName().AsNamed()
-	s.SceneServiceBase.Hooks = s
-	s.SceneServiceBase.Logger = logger
-	s.SceneServiceBase.DefaultParentFrame = "world"
+	s.Hooks = s
+	s.Logger = logger
+	s.DefaultParentFrame = "world"
 	// New UUID per update so re-added geometry isn't dropped by the viewer's
 	// REMOVED-UUID cache (LEDs update live without a manual refresh).
-	s.SceneServiceBase.DefaultUUIDStrategy = "versioned"
+	s.DefaultUUIDStrategy = "versioned"
 	if err := s.Reconfigure(ctx, deps, conf); err != nil {
 		return nil, err
 	}
@@ -122,7 +122,7 @@ func (s *ledScene) Reconfigure(_ context.Context, _ resource.Dependencies, conf 
 	parent := s.parentFrame
 	s.mu.Unlock()
 
-	if err := s.SceneServiceBase.ReconfigureWith(nil, 0, "", parent); err != nil {
+	if err := s.ReconfigureWith(nil, 0, "", parent); err != nil {
 		return err
 	}
 	visuals.Register(conf.ResourceName().Name, s)
@@ -179,7 +179,7 @@ func (s *ledScene) rebuildLocked() {
 			Color:       &col,
 		})
 	}
-	if err := s.SceneServiceBase.SetScene(visuals.SetSceneOpts{ParentFrame: s.parentFrame}, vs...); err != nil {
+	if err := s.SetScene(visuals.SetSceneOpts{ParentFrame: s.parentFrame}, vs...); err != nil {
 		s.logger.Warnw("trinkey-scene SetScene failed", "err", err)
 	}
 }
